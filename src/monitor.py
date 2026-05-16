@@ -50,26 +50,30 @@ def preprocess(reference_data, current_data, model):
     feature_cols = [
         "thu_nhap",
         "so_tien_vay",
+        "thoi_han_vay",
+        "diem_tin_dung",
+        "tra_hang_thang",
         "lich_su_no_xau"
     ]
     # Thêm .copy() và .dropna() để code an toàn tuyệt đối
     ref_df = reference_data[feature_cols].dropna().copy()
-    
-    # Với current_data (log), ta lấy thêm cột 'kết quả dự đoán' có sẵn
-    # (Đảm bảo tên cột này khớp với tên Dev 2 đã ghi vào CSV)
-    cur_cols = feature_cols + ["kết quả dự đoán"] 
-    cur_df = current_data[cur_cols].dropna().copy()
-    
-    # Xử lý Prediction cho tập Reference (vì data train chưa có dự đoán)
-    ref_X = ref_df.drop(columns=["lich_su_no_xau"])
-    ref_df["kết quả dự đoán"] = model.predict(ref_X)
 
-    #chuan bi data cho Evidently hieu duoc
+    pred_col_name = "ket_qua_du_doan"
+    cur_cols = feature_cols + [pred_col_name]
+    cur_df = current_data[cur_cols].dropna().copy()
+
+    # Xử lý Prediction cho tập Reference (vì data train chưa có dự đoán)
+    # Trích xuất đúng 5 features theo đúng thứ tự mà model yêu cầu để thực hiện tính toán
+    model_features = ["thu_nhap", "so_tien_vay", "thoi_han_vay", "diem_tin_dung", "tra_hang_thang"]
+    ref_X = ref_df[model_features]
+    ref_df[pred_col_name] = model.predict(ref_X)
+
+    # chuẩn bị data cho Evidently hiểu được
     data_definition = DataDefinition(
         classification=[
             BinaryClassification(
                 target="lich_su_no_xau",
-                prediction_labels="kết quả dự đoán"
+                prediction_labels=pred_col_name
             )
         ]
     )
@@ -97,14 +101,13 @@ def generate_report(reference_data, current_data):
     return my_eval
 
 def save_report(report, save_path):
-    #os.makedirs(save_path, exist_ok= True)
+    os.makedirs(save_path, exist_ok= True)
     report.save_html(str(save_path))
 
     print(f"✅ Report đã được lưu an toàn tại: {save_path}")
 
 def analyze_drift(report, drift_threshold=0.3):
     result = report.dict()
-    #print(json.dumps(result["metrics"][0], indent=2, default=str))
     drift_share = result["metrics"][0]["value"]["share"]
 
     if drift_share >= drift_threshold:
