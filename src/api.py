@@ -15,6 +15,7 @@ templates = Jinja2Templates(directory="templates")
 # Load model
 model = joblib.load("models/model.pkl")
 
+# MỤC XÂY HÀM PREDICT CHO FASTAPI
 
 # =========================
 # Request Schema
@@ -89,6 +90,7 @@ def predict(request: PredictRequest):
         "prediction": int(prediction)
     }
     
+# KẾT THÚC XÂY HÀM PREDICT CHO FASTAPI
     
 # Phần này không đụng đến
 # =========================
