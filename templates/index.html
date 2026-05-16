@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loan AI — MLOps Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg-top: #c8dff5;
+      --bg-mid: #ddeaf8;
+      --bg-bot: #e8e0d4;
+      --black: #111110;
+      --white: #fafaf8;
+      --yellow: #d4f500;
+      --gray: #6b6b65;
+      --border: rgba(17,17,16,0.12);
+      --card-bg: rgba(250,250,248,0.92);
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(160deg, var(--bg-top) 0%, var(--bg-mid) 40%, var(--bg-bot) 100%);
+      font-family: 'DM Sans', sans-serif;
+      color: var(--black);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── NAV ── */
+    nav {
+      width: 100%;
+      max-width: 1100px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 28px 32px;
+    }
+    .logo {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 500;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+    .nav-tag {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--gray);
+      background: rgba(17,17,16,0.07);
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      text-align: center;
+      padding: 40px 32px 56px;
+      max-width: 680px;
+    }
+    .hero h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: clamp(42px, 7vw, 72px);
+      line-height: 1.07;
+      letter-spacing: -0.02em;
+      margin-bottom: 20px;
+    }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--gray);
+    }
+    .hero p {
+      font-size: 16px;
+      color: var(--gray);
+      line-height: 1.6;
+      max-width: 460px;
+      margin: 0 auto;
+    }
+
+    /* ── CARD ── */
+    .card {
+      width: 100%;
+      max-width: 520px;
+      margin: 0 32px 80px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 4px 32px rgba(17,17,16,0.08), 0 1px 4px rgba(17,17,16,0.04);
+    }
+
+    .card-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--gray);
+      margin-bottom: 24px;
+    }
+
+    /* ── FIELD ── */
+    .field {
+      margin-bottom: 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-family: 'DM Mono', monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--gray);
+      margin-bottom: 7px;
+    }
+    .field input {
+      width: 100%;
+      padding: 13px 16px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(17,17,16,0.03);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      color: var(--black);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+      -moz-appearance: textfield;
+    }
+    .field input::-webkit-inner-spin-button,
+    .field input::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .field input::placeholder { color: #aaa9a4; }
+    .field input:focus {
+      border-color: var(--black);
+      box-shadow: 0 0 0 3px rgba(17,17,16,0.06);
+    }
+    .field-hint {
+      font-size: 11px;
+      color: #b0aea8;
+      margin-top: 5px;
+    }
+    .field-error {
+      font-size: 11px;
+      color: #d0402a;
+      margin-top: 5px;
+      display: none;
+    }
+    .field.has-error input { border-color: #d0402a; }
+    .field.has-error .field-error { display: block; }
+
+    /* ── DIVIDER ── */
+    hr.divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 24px 0;
+    }
+
+    /* ── BTN ── */
+    .btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 10px;
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+    .btn:hover { transform: scale(1.015); }
+    .btn:active { transform: scale(0.99); }
+    .btn-primary {
+      background: var(--black);
+      color: var(--white);
+      width: 100%;
+      justify-content: center;
+    }
+    .btn::before { content: '▪'; font-size: 10px; opacity: 0.7; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    /* ── RESULT ── */
+    #result {
+      margin-top: 20px;
+      min-height: 0;
+      overflow: hidden;
+      transition: min-height 0.3s;
+    }
+    .result-box {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      animation: fadeUp 0.35s ease both;
+    }
+    .result-box.approved {
+      background: rgba(212,245,0,0.18);
+      border-color: rgba(120,160,0,0.2);
+    }
+    .result-box.rejected {
+      background: rgba(208,64,42,0.07);
+      border-color: rgba(208,64,42,0.18);
+    }
+    .result-box.loading {
+      background: rgba(17,17,16,0.04);
+    }
+    .result-icon {
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .result-text strong {
+      display: block;
+      font-family: 'DM Serif Display', serif;
+      font-size: 18px;
+      margin-bottom: 2px;
+    }
+    .result-text span {
+      font-size: 12px;
+      color: var(--gray);
+      font-family: 'DM Mono', monospace;
+    }
+
+    /* ── LOADING DOTS ── */
+    .dots span {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--gray);
+      margin: 0 2px;
+      animation: bounce 1.2s ease-in-out infinite;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(17,17,16,0.55);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+      backdrop-filter: blur(4px);
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal-card {
+      width: 360px;
+      background: var(--white);
+      border-radius: 20px;
+      padding: 36px;
+      text-align: center;
+      box-shadow: 0 24px 64px rgba(17,17,16,0.18);
+      animation: popIn 0.25s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    @keyframes popIn { from{transform:scale(0.88);opacity:0} to{transform:scale(1);opacity:1} }
+    @keyframes fadeUp { from{transform:translateY(8px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+    .modal-badge {
+      display: inline-block;
+      background: var(--yellow);
+      color: var(--black);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 18px;
+    }
+    .modal-card h2 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 26px;
+      margin-bottom: 8px;
+      line-height: 1.15;
+    }
+    .modal-card p {
+      font-size: 14px;
+      color: var(--gray);
+      margin-bottom: 28px;
+    }
+    .price-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 4px;
+      margin-bottom: 28px;
+    }
+    .price-amount {
+      font-family: 'DM Serif Display', serif;
+      font-size: 56px;
+      line-height: 1;
+      color: var(--black);
+    }
+    .price-currency {
+      font-family: 'DM Mono', monospace;
+      font-size: 20px;
+      color: var(--gray);
+    }
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+    }
+    .btn-pay {
+      flex: 1;
+      background: var(--black);
+      color: var(--white);
+      justify-content: center;
+    }
+    .btn-pay-alt {
+      flex: 1;
+      background: rgba(17,17,16,0.07);
+      color: var(--black);
+      justify-content: center;
+    }
+
+    /* ── DEDUCTED NOTICE ── */
+    .deducted-notice {
+      margin-top: 20px;
+      padding: 12px 16px;
+      background: rgba(208,64,42,0.09);
+      border: 1px solid rgba(208,64,42,0.2);
+      border-radius: 10px;
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      color: #b83220;
+      text-align: center;
+      animation: fadeUp 0.3s ease both;
+      display: none;
+    }
+    .deducted-notice.show { display: block; }
+
+    /* ── FOOTER LINE ── */
+    .footer-line {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: rgba(17,17,16,0.3);
+      text-align: center;
+      padding: 0 0 32px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="logo">Loan AI</div>
+    <div class="nav-tag">MLOps Demo · v1.0</div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <h1>Dự báo khoản vay,<br><em>chính xác tức thì.</em></h1>
+    <p>Nhập thông tin tài chính để mô hình ML đánh giá khả năng được duyệt vay trong vài giây.</p>
+  </section>
+
+  <!-- FORM CARD -->
+  <div class="card">
+    <div class="card-label">001 — Thông tin đầu vào</div>
+
+    <div class="field" id="field-thu-nhap">
+      <label for="thu_nhap">Thu nhập (VNĐ)</label>
+      <input id="thu_nhap" type="number" step="0.01" placeholder="vd: 15000000" />
+      <div class="field-hint">Nhập số thực, đơn vị VNĐ</div>
+      <div class="field-error">Vui lòng nhập thu nhập hợp lệ</div>
+    </div>
+
+    <div class="field" id="field-so-tien-vay">
+      <label for="so_tien_vay">Số tiền vay (VNĐ)</label>
+      <input id="so_tien_vay" type="number" step="0.01" placeholder="vd: 50000000" />
+      <div class="field-hint">Nhập số thực, đơn vị VNĐ</div>
+      <div class="field-error">Vui lòng nhập số tiền vay hợp lệ</div>
+    </div>
+
+    <div class="field" id="field-no-xau">
+      <label for="lich_su_no_xau">Lịch sử nợ xấu (số lần)</label>
+      <input id="lich_su_no_xau" type="number" step="1" min="0" placeholder="vd: 0" />
+      <div class="field-hint">Nhập số nguyên ≥ 0</div>
+      <div class="field-error">Vui lòng nhập số nguyên hợp lệ (≥ 0)</div>
+    </div>
+
+    <hr class="divider" />
+
+    <button class="btn btn-primary" id="predict-btn" onclick="validateAndOpenPayment()">
+      Chạy dự báo
+    </button>
+
+    <div id="result"></div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer-line">© 2025 Loan AI · Dữ liệu chỉ dùng cho demo</div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="paymentModal">
+    <div class="modal-card" id="modalCard">
+      <div id="modalDefault">
+        <div class="modal-badge">THANH TOÁN</div>
+        <h2>Mở khóa<br>kết quả AI</h2>
+        <p>Xem prediction chỉ với một lần quẹt thẻ nhỏ thôi 😇</p>
+        <div class="price-row">
+          <span class="price-amount">36</span>
+          <span class="price-currency">$</span>
+        </div>
+        <div class="modal-buttons">
+          <button class="btn btn-pay" onclick="handlePay()">Cà thẻ</button>
+          <button class="btn btn-pay-alt" onclick="handlePay()">Cũng cà thẻ</button>
+        </div>
+        <div class="deducted-notice" id="deductedNotice">💳 Đã bị trừ 36$ — Đang xử lý...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function validateField(inputEl, fieldEl, isFloat) {
+      const val = inputEl.value.trim();
+      if (val === '') { fieldEl.classList.add('has-error'); return false; }
+      const num = isFloat ? parseFloat(val) : parseInt(val, 10);
+      if (isNaN(num) || (!isFloat && !Number.isInteger(num)) || num < 0) {
+        fieldEl.classList.add('has-error'); return false;
+      }
+      fieldEl.classList.remove('has-error'); return true;
+    }
+
+    function validateAndOpenPayment() {
+      const ok1 = validateField(document.getElementById('thu_nhap'),      document.getElementById('field-thu-nhap'),   true);
+      const ok2 = validateField(document.getElementById('so_tien_vay'),   document.getElementById('field-so-tien-vay'), true);
+      const ok3 = validateField(document.getElementById('lich_su_no_xau'),document.getElementById('field-no-xau'),     false);
+      if (ok1 && ok2 && ok3) {
+        document.getElementById('paymentModal').classList.add('open');
+      }
+    }
+
+    function handlePay() {
+      const notice = document.getElementById('deductedNotice');
+      notice.classList.add('show');
+      // disable both pay buttons
+      document.querySelectorAll('.btn-pay, .btn-pay-alt').forEach(b => b.disabled = true);
+
+      setTimeout(() => {
+        document.getElementById('paymentModal').classList.remove('open');
+        notice.classList.remove('show');
+        document.querySelectorAll('.btn-pay, .btn-pay-alt').forEach(b => b.disabled = false);
+        startPrediction();
+      }, 1600);
+    }
+
+    async function startPrediction() {
+      const resultEl = document.getElementById('result');
+      const btn = document.getElementById('predict-btn');
+      btn.disabled = true;
+
+      resultEl.innerHTML = `
+        <div class="result-box loading">
+          <div class="result-icon">
+            <div class="dots"><span></span><span></span><span></span></div>
+          </div>
+          <div class="result-text">
+            <strong>Đang phân tích...</strong>
+            <span>Mô hình ML đang xử lý dữ liệu</span>
+          </div>
+        </div>`;
+
+      const data = {
+        thu_nhap:        parseFloat(document.getElementById('thu_nhap').value),
+        so_tien_vay:     parseFloat(document.getElementById('so_tien_vay').value),
+        lich_su_no_xau:  parseInt(document.getElementById('lich_su_no_xau').value, 10),
+      };
+
+      try {
+        const response = await fetch('/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const res = await response.json();
+        const approved = res.prediction === 1 || res.prediction === '1' || res.prediction === true;
+
+        resultEl.innerHTML = approved
+          ? `<div class="result-box approved">
+              <div class="result-icon">✅</div>
+              <div class="result-text">
+                <strong>Được duyệt vay</strong>
+                <span>prediction: ${res.prediction} — Hồ sơ đạt yêu cầu</span>
+              </div>
+            </div>`
+          : `<div class="result-box rejected">
+              <div class="result-icon">❌</div>
+              <div class="result-text">
+                <strong>Từ chối cho vay</strong>
+                <span>prediction: ${res.prediction} — Hồ sơ không đạt</span>
+              </div>
+            </div>`;
+      } catch (e) {
+        resultEl.innerHTML = `<div class="result-box rejected">
+          <div class="result-icon">⚠️</div>
+          <div class="result-text">
+            <strong>Lỗi kết nối</strong>
+            <span>Không thể gọi /predict — kiểm tra server</span>
+          </div>
+        </div>`;
+      }
+
+      btn.disabled = false;
+    }
+
+    // Close modal on overlay click
+    document.getElementById('paymentModal').addEventListener('click', function(e) {
+      if (e.target === this) this.classList.remove('open');
+    });
+  </script>
+</body>
+</html>
