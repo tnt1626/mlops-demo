@@ -12,11 +12,11 @@ from pathlib import Path
 import joblib
 
 #declaring paths
-BASE_DIR = Path(__file__).resolve().parent.parent
-train_path = BASE_DIR / "data" / "train_data.csv"
-logs_path = BASE_DIR / "logs" / "inferences_logs.csv"
-model_path = BASE_DIR / "models" / "model.pkl"
-report_path = BASE_DIR / "reports" / "drift_report.html"
+# BASE_DIR = Path(__file__).resolve().parent.parent
+train_path = Path("data") / "train_data.csv"
+logs_path = Path("logs") / "inference_logs.csv"
+model_path = Path("models") / "model.pkl"
+report_path = Path("reports") / "drift_report.html"
 
 
 #defining methods
@@ -153,3 +153,5 @@ if __name__ == "__main__":
     main()
 
 
+# Các cột trong file inference_logs.csv
+# timestamp,thu_nhap,so_tien_vay,thoi_han_vay,diem_tin_dung,tra_hang_thang,lich_su_no_xau,prediction
