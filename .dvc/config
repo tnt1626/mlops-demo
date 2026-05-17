@@ -1,4 +1,4 @@
 [core]
-    remote = myremote
-['remote "myremote"']
-    url = gdrive://1pKKsFH7XAe6ppegxoN6QBkGTUd2D4uiJ
+    remote = storage
+['remote "storage"']
+    url = /run/media/pintee/New Volume/HCMUS/Intro2DS/tmp/mlops-demo-dvc-storage
