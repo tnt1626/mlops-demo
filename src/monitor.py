@@ -7,6 +7,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import joblib
+import shutil
 
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
@@ -21,110 +22,91 @@ from evidently.core.datasets import BinaryClassification
 # DUONG DAN
 # =============================================================================
 BASE_DIR         = Path(__file__).resolve().parent.parent
+
 TRAIN_PATH       = BASE_DIR / "data"    / "train_data.csv"
-RETRAIN_PATH     = BASE_DIR / "data"    / "retrain_data.csv"
 LOGS_PATH        = BASE_DIR / "logs"    / "inference_logs.csv"
+
 MODEL_PATH       = BASE_DIR / "models"  / "model.pkl"
 MODEL_BACKUP_DIR = BASE_DIR / "models"  / "backups"
-REPORT_PATH      = BASE_DIR / "reports" / "drift_report.html"
-TRAIN_SCRIPT     = BASE_DIR / "src"     / "train.py"
+
+REPORT_PATH           = BASE_DIR / "reports" / "drift_report.html"
+BEFORE_RETRAIN_REPORT = BASE_DIR / "reports" / "before_retrain_report.html"
+AFTER_RETRAIN_REPORT  = BASE_DIR / "reports" / "after_retrain_report.html"
+
+TRAIN_SCRIPT          = BASE_DIR / "src"     / "train.py"
 
 FEATURE_COLS = ["thu_nhap", "so_tien_vay", "thoi_han_vay", "diem_tin_dung", "tra_hang_thang"]
 TARGET_COL   = "lich_su_no_xau"
 PRED_COL     = "prediction"
 
 SEP = "=" * 60
+# Một số thay đổi sau khi bàn với nhóm:
+# - không sử dụng drift data nữa mà chuyển hoàn toàn sang inference_logs
 
+# Những thứ qp đã sửa: 
+# - Bỏ đi hàm calc_pseudo_label vì giờ đây thực hiện đánh giá trên inference_logs có đủ các tham số
+# - Thay đổi load_data() bây h mỗi lần load chỉ load một dataset
+# - Xóa hàm load_and_compare_drift_data() vì không còn dùng drift data nauwx
+# - Thêm hàm clean_monitoring_data để làm sạch bộ dữ liệu
+# - Chỉnh lại hàm preprocess để chỉ đổi một bộ dữ liệu sang evidently thay vì 2 bộ một lúc
+# - Thêm hàm generate_single_report() để tạo report dựa trên 1 bộ dữ liệu
+# - Thay đổi hàm merge_datasets() đúng với tên của nó, gộp 2 df thành một df và chỉ quan tâm
+#đến các feature cols, pred_col
+# - Thay đổi tên các tham số đầu vào sao cho logic ở các hàm ở phần retrain
+# - Hạn chế sài biến toàn cục cho hàm
 
 # =============================================================================
-# LOAD MODEL
+# LOAD DU LIEU VA MO HINH
 # =============================================================================
+
+
+def load_data(data_path: Path):
+    if not data_path.exists():
+        raise FileNotFoundError(f"Khong tim thay data data: {data_path}")
+    
+    data_data = pd.read_csv(data_path)
+
+    print(f"[OK] Da tai du lieu:\n     - {data_path}")
+    return data_data
+
+
 def load_model(model_path: Path):
     if not model_path.exists():
         raise FileNotFoundError(f"Khong tim thay model tai: {model_path}")
+    
     model = joblib.load(model_path)
     print(f"[OK] Da tai model tu {model_path}")
     return model
 
-
-# =============================================================================
-# LOAD DU LIEU  (tu sinh log mau neu chua co)
-# =============================================================================
-def _generate_mock_logs(current_path: Path) -> None:
-    print(f"[WARN] Khong tim thay file log. Tu dong tao 1000 dong log mau tai: {current_path}")
-    os.makedirs(current_path.parent, exist_ok=True)
-
-    np.random.seed(77)
-    n = 1000
-
-    thu_nhap = np.random.lognormal(mean=np.log(32_000_000), sigma=0.5, size=n)
-    thu_nhap = np.round(thu_nhap.clip(10_000_000, 200_000_000), -5)
-
-    thoi_han_vay = np.random.choice([6, 12, 18, 24, 36, 48, 60], size=n)
-    he_so_vay    = np.random.uniform(2, 16, n)
-    so_tien_vay  = np.round((thu_nhap * he_so_vay), -6).clip(10_000_000, 3_000_000_000)
-
-    diem_tin_dung = (
-        480 + (thu_nhap / 1_000_000) * 0.7 + np.random.normal(0, 50, n)
-    ).clip(300, 850).astype(int)
-
-    lai_suat_nam   = 0.08 + (1 - diem_tin_dung / 850) * 0.15
-    lai_suat_thang = lai_suat_nam / 12
-    tks            = (1 + lai_suat_thang) ** thoi_han_vay
-    tra_hang_thang = (so_tien_vay * lai_suat_thang * tks / (tks - 1)).astype(int)
-
-    ty_le_tra_no   = tra_hang_thang / thu_nhap
-    diem_rui_ro    = ty_le_tra_no * 4 - diem_tin_dung / 600 + np.random.normal(0, 0.5, n)
-    lich_su_no_xau = (diem_rui_ro > np.percentile(diem_rui_ro, 85)).astype(int)
-
-    df = pd.DataFrame({
-        "thu_nhap":       thu_nhap.astype(int),
-        "so_tien_vay":    so_tien_vay.astype(int),
-        "thoi_han_vay":   thoi_han_vay,
-        "diem_tin_dung":  diem_tin_dung,
-        "tra_hang_thang": tra_hang_thang,
-        TARGET_COL:       lich_su_no_xau,
-    })
-
-    if MODEL_PATH.exists():
-        model = joblib.load(MODEL_PATH)
-        df[PRED_COL] = model.predict(df[FEATURE_COLS])
-    else:
-        df[PRED_COL] = df[TARGET_COL]
-
-    df.to_csv(current_path, index=False)
-
-
-def load_data(reference_path: Path, current_path: Path):
-    if not reference_path.exists():
-        raise FileNotFoundError(f"Khong tim thay reference data: {reference_path}")
-    if not current_path.exists():
-        _generate_mock_logs(current_path)
-
-    reference_data = pd.read_csv(reference_path)
-    current_data   = pd.read_csv(current_path)
-    print(f"[OK] Da tai du lieu:\n     - {reference_path}\n     - {current_path}")
-    return reference_data, current_data
-
-
 # =============================================================================
 # TIEN XU LY
 # =============================================================================
-def _calc_tra_hang_thang(df: pd.DataFrame) -> pd.Series:
-    lai_suat_nam   = 0.08 + (1 - df["diem_tin_dung"] / 850) * 0.15
-    lai_suat_thang = lai_suat_nam / 12
-    tks            = (1 + lai_suat_thang) ** df["thoi_han_vay"]
-    return (df["so_tien_vay"] * lai_suat_thang * tks / (tks - 1)).astype(int)
+def clean_monitoring_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Giu lai cac cot can thiet cho monitoring.
+    """
 
+    required_cols = FEATURE_COLS + [
+        TARGET_COL,
+        PRED_COL,
+    ]
 
-def preprocess(reference_data: pd.DataFrame, current_data: pd.DataFrame, model):
-    ref_df = reference_data.dropna().copy()
-    print("[...] Dang tinh bu cot 'tra_hang_thang' cho du lieu train...")
-    ref_df["tra_hang_thang"] = _calc_tra_hang_thang(ref_df)
-    ref_df = ref_df[FEATURE_COLS + [TARGET_COL]].copy()
-    ref_df[PRED_COL] = model.predict(ref_df[FEATURE_COLS])
+    df = (
+        df[required_cols]
+        .dropna()
+        .copy()
+    )
 
-    cur_df = current_data[FEATURE_COLS + [TARGET_COL, PRED_COL]].dropna().copy()
+    return df
+
+def preprocess(
+    data: pd.DataFrame,
+):
+    """
+    Convert mot bo du lieu sang Evidently Dataset.
+    """
+
+    data = clean_monitoring_data(data)
 
     data_definition = DataDefinition(
         classification=[
@@ -135,20 +117,27 @@ def preprocess(reference_data: pd.DataFrame, current_data: pd.DataFrame, model):
         ]
     )
 
-    ref_evidently = Dataset.from_pandas(ref_df, data_definition=data_definition)
-    cur_evidently = Dataset.from_pandas(cur_df, data_definition=data_definition)
-    return ref_evidently, cur_evidently
+    data_evidently = Dataset.from_pandas(
+        data,
+        data_definition=data_definition
+    )
+
+    return data_evidently
 
 
 # =============================================================================
 # TAO & LUU REPORT
 # Evidently 0.7+: report.run() tra ve result object, goi save_html tren do
 # =============================================================================
-def generate_report(reference_data, current_data):
+def generate_comp_report(reference_data, current_data):
     report = Report([DataDriftPreset(), ClassificationPreset()])
     result = report.run(reference_data=reference_data, current_data=current_data)
     return result
 
+def generate_single_report(data):
+    report = Report([ClassificationPreset()])
+    result = report.run(current_data=data)
+    return result
 
 def save_report(result, save_path: Path) -> None:
     os.makedirs(save_path.parent, exist_ok=True)
@@ -200,7 +189,7 @@ def _extract_drift_share(result) -> float:
 
 
 # =============================================================================
-# DANH GIA MODEL — in ket qua test sau retrain
+# DANH GIA MODEL 
 # =============================================================================
 def evaluate_model(model, test_df: pd.DataFrame) -> dict:
     """Chay model tren tap test, tra ve dict cac chi so danh gia."""
@@ -243,28 +232,8 @@ def _print_metrics(label: str, metrics: dict) -> None:
 
 
 # =============================================================================
-# RETRAIN — ham chinh
+# MOT SO HAM TRUOC KHI RETRAIN
 # =============================================================================
-def _ask_user_retrain() -> bool:
-    """Hoi nguoi dung co muon retrain khong. Tra ve True neu dong y."""
-    print(f"\n{'─' * 60}")
-    print("  CANH BAO: Data drift vuot nguong cho phep!")
-    print("  Mo hinh hien tai co the khong con chinh xac.")
-    print(f"{'─' * 60}")
-    print("  Ban co muon thuc hien RETRAIN mo hinh khong?")
-    print("    [1] Co  — Tien hanh retrain voi du lieu moi")
-    print("    [2] Khong — Giu nguyen mo hinh hien tai, dung lai")
-    print(f"{'─' * 60}")
-
-    while True:
-        choice = input("  Lua chon cua ban (1/2): ").strip()
-        if choice == "1":
-            return True
-        elif choice == "2":
-            return False
-        else:
-            print("  [!] Vui long nhap 1 hoac 2.")
-
 
 def _backup_model() -> None:
     """Luu ban sao model cu truoc khi ghi de."""
@@ -273,165 +242,267 @@ def _backup_model() -> None:
     os.makedirs(MODEL_BACKUP_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_path = MODEL_BACKUP_DIR / f"model_backup_{ts}.pkl"
-    import shutil
     shutil.copy2(MODEL_PATH, backup_path)
     print(f"  [OK] Da backup model cu tai: {backup_path}")
 
+def calc_tra_hang_thang(df: pd.DataFrame) -> pd.Series:
+    so_tien_vay = df["so_tien_vay"]
+    thoi_han_vay = (df["thoi_han_vay"].replace(0, pd.NA))
+    diem_tin_dung = df["diem_tin_dung"]
 
-def _merge_datasets() -> tuple:
-    """
-    Gop train_data va inference_logs thanh retrain_data.
-    - Chi lay features + target, bo PRED_COL.
-    - KHONG drop_duplicates: giu nguyen ca 2 nguon, chi loai NaN.
-      drop_duplicates co the xoa sach 1 nguon khi 2 tap co phan phoi
-      giong nhau (nhu khi log duoc sinh ra tu cung seed voi train).
-    - Tra ve (train_clean, log_clean) lam tap test doc lap.
-    """
+    lai_suat_nam = (0.08 + (1 - (diem_tin_dung / 850)) * 0.15)
+    lai_suat_thang = lai_suat_nam / 12
+
+    tks = (1 + lai_suat_thang) ** thoi_han_vay
+    tra_hang_thang = (so_tien_vay * lai_suat_thang * tks / (tks - 1))
+
+    return tra_hang_thang
+
+def merge_datasets(
+    reference_data: pd.DataFrame,
+    inference_logs: pd.DataFrame,
+) -> pd.DataFrame:
     print("\n  [1/4] Dang gop du lieu train + inference logs...")
- 
-    train_df = pd.read_csv(TRAIN_PATH)
-    log_df   = pd.read_csv(LOGS_PATH)
- 
-    # Chuan hoa: dam bao log co cot tra_hang_thang
-    if "tra_hang_thang" not in log_df.columns:
-        log_df["tra_hang_thang"] = _calc_tra_hang_thang(log_df)
- 
-    keep_cols   = FEATURE_COLS + [TARGET_COL]
-    train_clean = train_df[[c for c in keep_cols if c in train_df.columns]].dropna()
-    log_clean   = log_df[[c for c in keep_cols if c in log_df.columns]].dropna()
- 
-    # Gop don gian: concat + reset index --- KHONG drop_duplicates
-    merged = pd.concat([train_clean, log_clean], ignore_index=True)
- 
-    os.makedirs(RETRAIN_PATH.parent, exist_ok=True)
-    merged.to_csv(RETRAIN_PATH, index=False)
- 
-    print(f"  [OK] retrain_data.csv da tao xong:")
-    print(f"       - Train goc : {len(train_clean):,} dong")
-    print(f"       - Inference : {len(log_clean):,} dong")
-    print(f"       - Sau gop   : {len(merged):,} dong  →  {RETRAIN_PATH}")
- 
-    # Tra ve rieng biet de dung lam test set doc lap
-    return train_clean, log_clean
+
+    required_cols = FEATURE_COLS + [TARGET_COL]
+
+    # Dùng bản copy để KHÔNG sửa DataFrame gốc
+    ref_work = reference_data.copy()
+    log_work = inference_logs.copy()
+
+    if "tra_hang_thang" not in ref_work.columns:
+        ref_work["tra_hang_thang"] = calc_tra_hang_thang(ref_work)
+    if "tra_hang_thang" not in log_work.columns:
+        log_work["tra_hang_thang"] = calc_tra_hang_thang(log_work)
+
+    ref_df = ref_work[required_cols].dropna().copy()
+    log_df = log_work[required_cols].dropna().copy()
+
+    merged_df = pd.concat([ref_df, log_df], ignore_index=True)
+
+    os.makedirs(TRAIN_PATH.parent, exist_ok=True)
+    merged_df.to_csv(TRAIN_PATH, index=False)
+
+    print(f"[OK] Merge thanh cong:")
+    print(f"     - Reference : {len(ref_df):,} dong")
+    print(f"     - Logs      : {len(log_df):,} dong")
+    print(f"     - Total     : {len(merged_df):,} dong -> Da ghi de vao {TRAIN_PATH}")
+
+    return merged_df
+
+# =============================================================================
+# RETRAIN
+# =============================================================================
+def _ask_user_retrain() -> bool:
+    """Hoi y kien nguoi dung"""
+    try: 
+        respone = input("\n[?] Phát hiện Data Drift vượt ngưỡng! Bạn có muốn thực hiện Retrain model không? (y/n): ")
+        return respone.strip().lower() in ['y', 'yes']
+    except Exception:
+        return False
 
 
 def _run_train_script() -> bool:
     """
-    Goi train.py qua subprocess, truyen RETRAIN_DATA_PATH qua bien moi truong.
-    Tra ve True neu thanh cong.
+    Chay lai train.py voi retrain dataset.
     """
-    print("\n  [2/4] Dang chay lai train.py voi retrain_data...")
-
+    print("\n  [2/4] Dang retrain model...")
     if not TRAIN_SCRIPT.exists():
-        print(f"  [ERROR] Khong tim thay train script: {TRAIN_SCRIPT}")
+        print(
+            f"  [ERROR] Khong tim thay train script: "
+            f"{TRAIN_SCRIPT}"
+        )
         return False
 
     env = os.environ.copy()
-    env["RETRAIN_DATA_PATH"] = str(RETRAIN_PATH)   # train.py co the doc bien nay
+    env["TRAIN_DATA_PATH"] = str(TRAIN_PATH)
 
     try:
         proc = subprocess.run(
             [sys.executable, str(TRAIN_SCRIPT)],
             env=env,
-            capture_output=False,   # cho phep output hien thi truc tiep
+            capture_output=False,
             text=True,
         )
         if proc.returncode != 0:
-            print(f"\n  [ERROR] train.py ket thuc voi ma loi: {proc.returncode}")
+            print(
+                f"\n  [ERROR] train.py ket thuc voi ma loi: "
+                f"{proc.returncode}"
+            )
             return False
+        print("\n  [OK] Retrain thanh cong.")
         return True
+
     except Exception as e:
-        print(f"  [ERROR] Loi khi chay train.py: {e}")
+        print(
+            f"\n  [ERROR] Loi khi chay train.py: {e}"
+        )
         return False
 
 
-def _run_evaluation(train_df: pd.DataFrame, log_df: pd.DataFrame) -> None:
-    """
-    Load model moi vua train xong, chay test tren 2 tap RIENG BIET:
-      - train_df : du lieu goc truoc drift (baseline)
-      - log_df   : du lieu production da bi drift (muc tieu chinh)
-    KHONG test tren retrain_data vi do la train set (tranh data leakage).
-    """
-    if 'tra_hang_thang' not in train_df.columns:
-        # Tính toán lại lãi suất và số tiền trả hàng tháng (EMI) giống bên train.py
-        lai_suat_nam = 0.08 + (1 - (train_df['diem_tin_dung'] / 850)) * 0.15
-        lai_suat_thang = lai_suat_nam / 12
-        tks = (1 + lai_suat_thang) ** train_df['thoi_han_vay']
-        
-        train_df['tra_hang_thang'] = (train_df['so_tien_vay'] * lai_suat_thang * tks / (tks - 1)).astype(int)
-    
-    print("\n  [3/4] Dang danh gia model moi...")
- 
-    if not MODEL_PATH.exists():
-        print("  [ERROR] Khong tim thay model sau khi retrain.")
-        return
- 
-    new_model = load_model(MODEL_PATH)
- 
-    # Tap 1: train_data goc (baseline truoc drift)
-    train_test = train_df[FEATURE_COLS + [TARGET_COL]].dropna()
- 
-    # Tap 2: inference_logs (du lieu production bi drift)
-    log_test = log_df[FEATURE_COLS + [TARGET_COL]].dropna()
- 
-    metrics_train = evaluate_model(new_model, train_test)
-    metrics_log   = evaluate_model(new_model, log_test)
- 
-    print(f"\n  [4/4] KET QUA DANH GIA MODEL MOI")
+def _run_evaluation(
+    reference_data: pd.DataFrame,
+    current_data: pd.DataFrame,
+    phase: str = "after",
+    model=None,
+) -> None:
+    step = "[3/4]" if phase == "after" else "[PRE]"
+    print(f"\n  {step} Dang danh gia model ({phase} retrain)...")
+
+    if model is None:
+        if not MODEL_PATH.exists():
+            print("  [ERROR] Khong tim thay model.")
+            return
+        model = load_model(MODEL_PATH)
+
+    ref_df = reference_data[FEATURE_COLS + [TARGET_COL]].dropna().copy()
+    cur_df = current_data[FEATURE_COLS + [TARGET_COL]].dropna().copy()
+
+    # Luôn predict lại bằng model được truyền vào (đúng với before/after)
+    ref_df[PRED_COL] = model.predict(ref_df[FEATURE_COLS])
+    cur_df[PRED_COL] = model.predict(cur_df[FEATURE_COLS])
+
+    metrics_ref = evaluate_model(model, ref_df)
+    metrics_cur = evaluate_model(model, cur_df)
+
+    phase_label = (
+        "TRUOC RETRAIN"
+        if phase == "before"
+        else "SAU RETRAIN"
+    )
+
+    print(
+        f"\n  KET QUA DANH GIA MODEL "
+        f"— {phase_label}"
+    )
     print(f"  {'─' * 50}")
-    _print_metrics(f"Tren train_data goc  ({metrics_train['n_samples']:,} mau / baseline)", metrics_train)
-    _print_metrics(f"Tren inference_logs  ({metrics_log['n_samples']:,} mau / sau drift) ", metrics_log)
- 
-    # So sanh delta F1
-    delta_f1 = metrics_log["f1"] - metrics_train["f1"]
-    symbol   = "+" if delta_f1 >= 0 else ""
-    verdict  = "on dinh" if abs(delta_f1) < 0.05 else "can theo doi them"
-    print(f"\n  [DELTA] F1 (logs vs train): {symbol}{delta_f1:.4f}  [{verdict}]")
- 
-    print(f"\n  {'─' * 50}")
-    print("  [INFO] Mo report drift de xem chi tiet:")
-    print(f"         {REPORT_PATH}")
+    _print_metrics(
+        f"Reference Data "
+        f"({metrics_ref['n_samples']:,} mau)",
+        metrics_ref
+    )
+    _print_metrics(
+        f"Current Data "
+        f"({metrics_cur['n_samples']:,} mau)",
+        metrics_cur
+    )
+
+    delta_f1 = (
+        metrics_cur["f1"]
+        - metrics_ref["f1"]
+    )
+    symbol = "+" if delta_f1 >= 0 else ""
+    verdict = (
+        "on dinh"
+        if abs(delta_f1) < 0.05
+        else "can theo doi them"
+    )
+    print(
+        f"\n  [DELTA] F1 "
+        f"(current vs reference): "
+        f"{symbol}{delta_f1:.4f} "
+        f"[{verdict}]"
+    )
+    report_path = (
+        BEFORE_RETRAIN_REPORT
+        if phase == "before"
+        else AFTER_RETRAIN_REPORT
+    )
+
+    _save_classification_report(
+        model=model,
+        reference_data=ref_df,
+        current_data=cur_df,
+        save_path=report_path,
+        phase_label=phase_label,
+    )
+
     print(f"  {'─' * 50}")
 
+def _save_classification_report(
+    model,
+    reference_data: pd.DataFrame,
+    current_data: pd.DataFrame,
+    save_path: Path,
+    phase_label: str,
+) -> None:
+    """
+    Tao va luu Evidently classification report.
+    """
 
-def proactive_retrain() -> None:
-    """
-    Quy trinh retrain tuong tac:
-      1. Hoi nguoi dung
-      2. Gop du lieu
-      3. Backup model cu
-      4. Chay lai train.py
-      5. Danh gia va bao cao ket qua
-    """
-    # --- Buoc 0: Hoi nguoi dung ---
+    try:
+        ref_df = reference_data.copy()
+        cur_df = current_data.copy()
+
+        ref_df[PRED_COL] = model.predict(
+            ref_df[FEATURE_COLS]
+        )
+        cur_df[PRED_COL] = model.predict(
+            cur_df[FEATURE_COLS]
+        )
+
+        ref_ds = preprocess(ref_df)
+        cur_ds = preprocess(cur_df)
+
+        result = generate_comp_report(
+            ref_ds,
+            cur_ds
+        )
+
+        save_report(
+            result,
+            save_path
+        )
+
+        print(
+            f"  [OK] Report [{phase_label}] da duoc luu."
+        )
+
+    except Exception as e:
+
+        print(
+            f"  [WARN] Khong the tao report: {e}"
+        )
+
+
+
+#===================================================================
+
+def proactive_retrain(reference_data: pd.DataFrame,
+                      current_data: pd.DataFrame,
+                      old_model) -> None:
     if not _ask_user_retrain():
         print("\n  [INFO] Nguoi dung chon khong retrain. Giu nguyen mo hinh hien tai.")
         print(f"  [INFO] Hay theo doi drift va chay lai monitor.py khi can thiet.")
         return
- 
+
     print(f"\n{SEP}")
     print("  BAT DAU QUA TRINH RETRAIN")
     print(SEP)
- 
-    # --- Buoc 1: Gop du lieu ---
-    train_clean, log_clean = _merge_datasets()
- 
-    # --- Buoc 2: Backup model cu ---
+
+    # Bước 1: Before report — dùng current_data (inference logs)
+    print("\n  [PRE] Lưu report TRƯỚC khi retrain...")
+    _run_evaluation(reference_data, current_data, phase="before", model=old_model)
+
+    # Bước 2: Merge và ghi đè TRAIN_PATH
+    merge_datasets(reference_data, current_data)
+
+    # Bước 3: Backup model cũ
     _backup_model()
- 
-    # --- Buoc 3: Chay train.py ---
+
+    # Bước 4: Train model mới
     success = _run_train_script()
- 
     if not success:
-        print(f"\n  [THAT BAI] Retrain khong thanh cong.")
-        print(f"  [INFO] Model cu van duoc giu nguyen (xem backup tai {MODEL_BACKUP_DIR})")
+        print(f"\n  [THẤT BẠI] Quá trình chạy train.py gặp lỗi.")
+        print(f"  [INFO] Model cũ vẫn được giữ nguyên (xem backup tại {MODEL_BACKUP_DIR})")
         return
- 
-    print(f"\n  [OK] train.py chay thanh cong. Model moi da duoc luu tai: {MODEL_PATH}")
- 
-    # --- Buoc 4: Danh gia model moi (2 tap doc lap, tranh data leakage) ---
-    _run_evaluation(train_clean, log_clean)
- 
+    print(f"\n  [OK] train.py chạy thành công. Model mới đã được lưu tại: {MODEL_PATH}")
+
+    # Bước 5: After report — vẫn dùng current_data để so sánh công bằng với before
+    # Mục tiêu: model mới có tốt hơn model cũ trên inference logs không?
+    new_model = load_model(MODEL_PATH)
+    _run_evaluation(reference_data, current_data, phase="after", model=new_model)
+
     print(f"\n{SEP}")
     print("  RETRAIN HOAN TAT THANH CONG")
     print(SEP)
@@ -439,42 +510,68 @@ def proactive_retrain() -> None:
 # =============================================================================
 # PHAN TICH DRIFT — goi retrain neu can
 # =============================================================================
-def analyze_drift(result, drift_threshold: float = 0.2) -> None:
+def analyze_drift(result, reference_data: pd.DataFrame, current_data: pd.DataFrame, model, drift_threshold: float = 0.3) -> None:
+    """
+    Nhận tham số trực tiếp từ main để kiểm tra tỷ lệ drift của các feature.
+    """
     drift_share = _extract_drift_share(result)
 
     print(f"\n{'─' * 60}")
-    print(f"  KET QUA PHAN TICH DRIFT")
+    print(f"  KẾT QUẢ PHÂN TÍCH DATA DRIFT")
     print(f"{'─' * 60}")
-    print(f"  Ty le cot bi drift : {drift_share:.2%}")
-    print(f"  Nguong canh bao    : {drift_threshold:.0%}")
+    print(f"  Tỷ lệ cột bị drift : {drift_share:.2%}")
+    print(f"  Ngưỡng cảnh báo    : {drift_threshold:.0%}")
 
     if drift_share >= drift_threshold:
-        proactive_retrain()
+        proactive_retrain(reference_data, current_data, model)
     else:
-        print(f"\n  [OK] He thong on dinh — khong can retrain.")
+        print(f"\n  [OK] Hệ thống ổn định — Không cần thực hiện retrain.")
         print(f"{'─' * 60}")
-
 
 # =============================================================================
 # ENTRY POINT
 # =============================================================================
 def main() -> None:
     print(SEP)
-    print("   BAT DAU QUA TRINH KIEM TRA DATA DRIFT")
+    print("   BẮT ĐẦU QUA TRÌNH KIỂM TRA DATA DRIFT")
     print(SEP)
 
-    reference_data, current_data = load_data(TRAIN_PATH, LOGS_PATH)
-    model                        = load_model(MODEL_PATH)
-    ref_evidently, cur_evidently = preprocess(reference_data, current_data, model)
-    result                       = generate_report(ref_evidently, cur_evidently)
+    # 1. Đọc dữ liệu train gốc (reference) và log thực tế (current)
+    reference_data = load_data(TRAIN_PATH)
+    current_data = load_data(LOGS_PATH)
+
+    # 2. Load mô hình phân loại hiện tại đang chạy sản xuất
+    model = load_model(MODEL_PATH)
+
+    # 3. CHUẨN HÓA DỮ LIỆU: Đảm bảo có đủ cột tính toán và dự đoán trước khi chạy Evidently
+    print("\n[...] Kiem tra va bo sung cac cot tinh toan/du doan con thieu...")
+    
+    # Tự động tính cột 'tra_hang_thang' nếu file csv chưa có
+    if "tra_hang_thang" not in reference_data.columns:
+        reference_data["tra_hang_thang"] = calc_tra_hang_thang(reference_data)
+    if "tra_hang_thang" not in current_data.columns:
+        current_data["tra_hang_thang"] = calc_tra_hang_thang(current_data)
+
+    # Sinh cột 'prediction' dựa trên mô hình hiện tại để làm ClassificationPreset
+    reference_data[PRED_COL] = model.predict(reference_data[FEATURE_COLS])
+    if PRED_COL not in current_data.columns:
+        current_data[PRED_COL] = model.predict(current_data[FEATURE_COLS])
+
+    # 4. Tiền xử lý dữ liệu và mapping cấu trúc cho đối tượng Evidently Dataset
+    print("\n[...] Tien xu ly du lieu cho doi tuong Evidently Dataset...")
+    ref_evidently = preprocess(reference_data)
+    cur_evidently = preprocess(current_data)
+
+    # 5. Tính toán và kết xuất Data Drift so sánh tổng quan giữa Train và Logs
+    result = generate_comp_report(ref_evidently, cur_evidently)
     save_report(result, REPORT_PATH)
-    analyze_drift(result)
+
+    # 6. Phân tích kết quả drift, nếu vượt ngưỡng sẽ kích hoạt quy trình retrain
+    analyze_drift(result, reference_data, current_data, model=model, drift_threshold=0.3)
 
     print(f"\n{SEP}")
-    print("   HOAN THANH QUA TRINH KIEM TRA")
+    print("   HOÀN THÀNH TOÀN BỘ QUÁ TRÌNH KIỂM TRA MÔ HÌNH")
     print(SEP)
-
 
 if __name__ == "__main__":
     main()
-    
