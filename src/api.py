@@ -62,7 +62,7 @@ def predict(request: PredictRequest):
                 "thoi_han_vay", "diem_tin_dung", "tra_hang_thang", "lich_su_no_xau", "prediction"
             ])
         writer.writerow([
-            datetime.now(), 
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
             request.thu_nhap, 
             request.so_tien_vay,   
             request.thoi_han_vay, 
