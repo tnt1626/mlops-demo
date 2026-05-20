@@ -3,16 +3,56 @@ stages:
   train:
     cmd: uv run python src/train.py
     deps:
+    - path: data/train_data.csv
+      hash: md5
+      md5: d71ed77c7b0401a60559a854dd788e5f
+      size: 72729
     - path: src/train.py
       hash: md5
-      md5: d25c6799bded4024a59d97cadceecc41
-      size: 3564
+      md5: d70844049b7814f08767e50f93227f2a
+      size: 1109
+    outs:
+    - path: models/model.pkl
+      hash: md5
+      md5: 70b2ed41549c19863398c1eccc525bd6
+      size: 700329
+  generate_data:
+    cmd: uv run python src/generate_train_data.py
+    deps:
+    - path: src/generate_train_data.py
+      hash: md5
+      md5: f39d13ea07a3b1190fd50ced8d024679
+      size: 2675
     outs:
     - path: data/train_data.csv
       hash: md5
-      md5: a0f423c1fef07852a5cc54faa359ac63
-      size: 55552
-    - path: models/model.pkl
+      md5: d71ed77c7b0401a60559a854dd788e5f
+      size: 72729
+  generate_drift:
+    cmd: uv run python src/generate_drift_data.py
+    deps:
+    - path: src/generate_drift_data.py
       hash: md5
-      md5: 27e067b51e0867d948231c521a2d4454
-      size: 567209
+      md5: 0e10f8adb1f98b160d43844b1b11bea9
+      size: 3053
+    outs:
+    - path: data/drift_data.csv
+      hash: md5
+      md5: 15e8afc935cdf6c67e0933fd44e55d10
+      size: 36258
+  simulate_drift:
+    cmd: uv run python src/simulate_request.py
+    deps:
+    - path: data/drift_data.csv
+      hash: md5
+      md5: 15e8afc935cdf6c67e0933fd44e55d10
+      size: 36258
+    - path: src/simulate_request.py
+      hash: md5
+      md5: 03b59e7dbac2c0d78a27429fd4d2738c
+      size: 966
+    outs:
+    - path: logs/inference_logs.csv
+      hash: md5
+      md5: 53aaebe2025c49d6dd3651dc6fe7ba4b
+      size: 67280

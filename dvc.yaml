@@ -1,8 +1,34 @@
 stages:
+  #Tạo train_data.csv
+  generate_data:
+    cmd: uv run python src/generate_train_data.py
+    deps:
+      - src/generate_train_data.py
+    outs:
+      - data/train_data.csv #dvc lưu và xóa train_data.csv trên workspace nếu đã có sẵn 
+                            # Nếu code generate_train_data.py và csv không đổi thì tự skip
+
   train:
     cmd: uv run python src/train.py
     deps:
       - src/train.py
-    outs:
       - data/train_data.csv
-      - models/model.pkl
+    outs:
+      - models/model.pkl 
+
+      # --- CẤU HÌNH MỚI CHO DRIFT SIMULATION ---
+  generate_drift:
+    cmd: uv run python src/generate_drift_data.py
+    deps:
+      - src/generate_drift_data.py
+    outs:
+      - data/drift_data.csv
+
+  simulate_drift:
+    cmd: uv run python src/simulate_request.py
+    deps:
+      - src/simulate_request.py
+      - data/drift_data.csv #Khi gọi dvc thấy thiếu file drift_data.csv sẽ tự 
+                            #quét các đầu ra "outs" ở các stage và tự chạy stage generate_drift
+    outs:
+      - logs/inference_logs.csv 
