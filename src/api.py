@@ -5,6 +5,7 @@ import pandas as pd
 from pathlib import Path
 import csv
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
@@ -46,8 +47,13 @@ def predict(request: PredictRequest):
 
     # 5. Tiến hành dự đoán nợ xấu (0: Tốt, 1: Nợ xấu)
     prediction = model.predict(input_data)[0]
-
+    
     # 6. Ghi log lịch sử dự đoán
+    
+    ## Set giờ Việt Nam
+    now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+    gio_viet_nam = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] #Lấy 3 mili giây
+    
     Path("logs").mkdir(exist_ok=True)
     log_file = "logs/inference_logs.csv"
 
@@ -62,8 +68,8 @@ def predict(request: PredictRequest):
                 "thoi_han_vay", "diem_tin_dung", "tra_hang_thang", "lich_su_no_xau", "prediction"
             ])
         writer.writerow([
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
-            request.thu_nhap, 
+            gio_viet_nam,
+            request.thu_nhap,
             request.so_tien_vay,   
             request.thoi_han_vay, 
             request.diem_tin_dung, 

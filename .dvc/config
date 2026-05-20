@@ -1,4 +1,4 @@
 [core]
-    remote = storage
-['remote "storage"']
-    url = /run/media/pintee/New Volume/HCMUS/Intro2DS/tmp/mlops-demo-dvc-storage
+    remote = storage_gcs
+['remote "storage_gcs"']
+    url = gs://mlops-demo-hcmus-bucket/dvc_cache

@@ -2,7 +2,7 @@ install:
 	uv sync
 
 train:
-	dvc exp run
+	dvc exp run train 
 
 serve:
 	uv run uvicorn src.api:app --reload
@@ -17,6 +17,8 @@ docker-run:
 	docker run -p 8000:8000 -v "$$(pwd)/logs:/app/logs" mlops-demo
 # 	2 dòng code dưới để lưu vào csv local, nếu k sẽ lưu vào csv của Docker, khi reload sẽ mất
 
-drift-simulate:
-	uv run python src/simulate_request.py
+simulate-drift:
+	dvc exp run simulate_drift
 	
+update-logs:
+	gcloud storage cp gs://mlops-demo-hcmus-bucket/inference_logs.csv logs/inference_logs.csv
