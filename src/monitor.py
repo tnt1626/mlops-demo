@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 import joblib
 import shutil
+import webbrowser
 
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
@@ -40,20 +41,6 @@ TARGET_COL   = "lich_su_no_xau"
 PRED_COL     = "prediction"
 
 SEP = "=" * 60
-# Một số thay đổi sau khi bàn với nhóm:
-# - không sử dụng drift data nữa mà chuyển hoàn toàn sang inference_logs
-
-# Những thứ qp đã sửa: 
-# - Bỏ đi hàm calc_pseudo_label vì giờ đây thực hiện đánh giá trên inference_logs có đủ các tham số
-# - Thay đổi load_data() bây h mỗi lần load chỉ load một dataset
-# - Xóa hàm load_and_compare_drift_data() vì không còn dùng drift data nauwx
-# - Thêm hàm clean_monitoring_data để làm sạch bộ dữ liệu
-# - Chỉnh lại hàm preprocess để chỉ đổi một bộ dữ liệu sang evidently thay vì 2 bộ một lúc
-# - Thêm hàm generate_single_report() để tạo report dựa trên 1 bộ dữ liệu
-# - Thay đổi hàm merge_datasets() đúng với tên của nó, gộp 2 df thành một df và chỉ quan tâm
-#đến các feature cols, pred_col
-# - Thay đổi tên các tham số đầu vào sao cho logic ở các hàm ở phần retrain
-# - Hạn chế sài biến toàn cục cho hàm
 
 # =============================================================================
 # LOAD DU LIEU VA MO HINH
@@ -80,33 +67,20 @@ def load_model(model_path: Path):
 # =============================================================================
 # TIEN XU LY
 # =============================================================================
-def clean_monitoring_data(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess(data: pd.DataFrame):
     """
     Giu lai cac cot can thiet cho monitoring.
-    """
-
+    """    
     required_cols = FEATURE_COLS + [
         TARGET_COL,
         PRED_COL,
     ]
 
-    df = (
-        df[required_cols]
-        .dropna()
-        .copy()
-    )
-
-    return df
-
-def preprocess(
-    data: pd.DataFrame,
-):
+    data = data[required_cols].dropna().copy()
+    
     """
     Convert mot bo du lieu sang Evidently Dataset.
     """
-
-    data = clean_monitoring_data(data)
-
     data_definition = DataDefinition(
         classification=[
             BinaryClassification(
@@ -128,9 +102,12 @@ def preprocess(
 # TAO & LUU REPORT
 # Evidently 0.7+: report.run() tra ve result object, goi save_html tren do
 # =============================================================================
-def generate_comp_report(reference_data, current_data):
+def generate_comp_report(reference_data: pd.DataFrame, current_data: pd.DataFrame):
+    ref_evidently = preprocess(reference_data)
+    cur_evidently = preprocess(current_data)
+
     report = Report([DataDriftPreset(), ClassificationPreset()])
-    result = report.run(reference_data=reference_data, current_data=current_data)
+    result = report.run(reference_data=ref_evidently, current_data=cur_evidently)
     return result
 
 def generate_single_report(data):
@@ -186,47 +163,6 @@ def _extract_drift_share(result) -> float:
     return 0.0
 
 # =============================================================================
-# DANH GIA MODEL 
-# =============================================================================
-def evaluate_model(model, test_df: pd.DataFrame) -> dict:
-    """Chay model tren tap test, tra ve dict cac chi so danh gia."""
-    X = test_df[FEATURE_COLS]
-    y_true = test_df[TARGET_COL]
-    y_pred = model.predict(X)
-
-    # predict_proba de tinh ROC-AUC (neu model ho tro)
-    try:
-        y_prob = model.predict_proba(X)[:, 1]
-        auc = roc_auc_score(y_true, y_prob)
-    except AttributeError:
-        auc = None
-
-    cm = confusion_matrix(y_true, y_pred)
-
-    return {
-        "accuracy":  accuracy_score(y_true, y_pred),
-        "precision": precision_score(y_true, y_pred, zero_division=0),
-        "recall":    recall_score(y_true, y_pred, zero_division=0),
-        "f1":        f1_score(y_true, y_pred, zero_division=0),
-        "roc_auc":   auc,
-        "confusion_matrix": cm,
-        "n_samples": len(y_true),
-    }
-
-def _print_metrics(label: str, metrics: dict) -> None:
-    print(f"\n  [{label}]")
-    print(f"    Accuracy  : {metrics['accuracy']:.4f}")
-    print(f"    Precision : {metrics['precision']:.4f}")
-    print(f"    Recall    : {metrics['recall']:.4f}")
-    print(f"    F1-Score  : {metrics['f1']:.4f}")
-    if metrics["roc_auc"] is not None:
-        print(f"    ROC-AUC   : {metrics['roc_auc']:.4f}")
-    cm = metrics["confusion_matrix"]
-    print(f"    Confusion Matrix:")
-    print(f"      TN={cm[0,0]}  FP={cm[0,1]}")
-    print(f"      FN={cm[1,0]}  TP={cm[1,1]}")
-
-# =============================================================================
 # MOT SO HAM TRUOC KHI RETRAIN
 # =============================================================================
 
@@ -253,7 +189,7 @@ def calc_tra_hang_thang(df: pd.DataFrame) -> pd.Series:
 
     return tra_hang_thang
 
-def merge_datasets(
+def merge_datasets_and_save(
     reference_data: pd.DataFrame,
     inference_logs: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -290,7 +226,8 @@ def merge_datasets(
 # =============================================================================
 def _ask_user_retrain() -> bool:
     """Hoi y kien nguoi dung"""
-    try: 
+    try:
+        webbrowser.open(f"file://{REPORT_PATH.absolute()}")
         respone = input("\n[?] Phát hiện Data Drift vượt ngưỡng! Bạn có muốn thực hiện Retrain model không? (y/n): ")
         return respone.strip().lower() in ['y', 'yes']
     except Exception:
@@ -333,157 +270,23 @@ def _run_train_script() -> bool:
         )
         return False
 
-def _run_evaluation(
-    reference_data: pd.DataFrame,
-    current_data: pd.DataFrame,
-    phase: str = "after",
-    model=None,
-) -> None:
-    step = "[3/4]" if phase == "after" else "[PRE]"
-    print(f"\n  {step} Dang danh gia model ({phase} retrain)...")
-
-    if model is None:
-        if not MODEL_PATH.exists():
-            print("  [ERROR] Khong tim thay model.")
-            return
-        model = load_model(MODEL_PATH)
-
-    ref_df = reference_data[FEATURE_COLS + [TARGET_COL]].dropna().copy()
-    cur_df = current_data[FEATURE_COLS + [TARGET_COL]].dropna().copy()
-
-    # Luôn predict lại bằng model được truyền vào (đúng với before/after)
-    ref_df[PRED_COL] = model.predict(ref_df[FEATURE_COLS])
-    cur_df[PRED_COL] = model.predict(cur_df[FEATURE_COLS])
-
-    metrics_ref = evaluate_model(model, ref_df)
-    metrics_cur = evaluate_model(model, cur_df)
-
-    phase_label = (
-        "TRUOC RETRAIN"
-        if phase == "before"
-        else "SAU RETRAIN"
-    )
-
-    print(
-        f"\n  KET QUA DANH GIA MODEL "
-        f"— {phase_label}"
-    )
-    print(f"  {'─' * 50}")
-    _print_metrics(
-        f"Reference Data "
-        f"({metrics_ref['n_samples']:,} mau)",
-        metrics_ref
-    )
-    _print_metrics(
-        f"Current Data "
-        f"({metrics_cur['n_samples']:,} mau)",
-        metrics_cur
-    )
-
-    delta_f1 = (
-        metrics_cur["f1"]
-        - metrics_ref["f1"]
-    )
-    symbol = "+" if delta_f1 >= 0 else ""
-    verdict = (
-        "on dinh"
-        if abs(delta_f1) < 0.05
-        else "can theo doi them"
-    )
-    print(
-        f"\n  [DELTA] F1 "
-        f"(current vs reference): "
-        f"{symbol}{delta_f1:.4f} "
-        f"[{verdict}]"
-    )
-    report_path = (
-        BEFORE_RETRAIN_REPORT
-        if phase == "before"
-        else AFTER_RETRAIN_REPORT
-    )
-
-    _save_classification_report(
-        model=model,
-        reference_data=ref_df,
-        current_data=cur_df,
-        save_path=report_path,
-        phase_label=phase_label,
-    )
-
-    print(f"  {'─' * 50}")
-
-def _save_classification_report(
-    model,
-    reference_data: pd.DataFrame,
-    current_data: pd.DataFrame,
-    save_path: Path,
-    phase_label: str,
-) -> None:
-    """
-    Tao va luu Evidently classification report.
-    """
-
-    try:
-        ref_df = reference_data.copy()
-        cur_df = current_data.copy()
-
-        ref_df[PRED_COL] = model.predict(
-            ref_df[FEATURE_COLS]
-        )
-        cur_df[PRED_COL] = model.predict(
-            cur_df[FEATURE_COLS]
-        )
-
-        ref_ds = preprocess(ref_df)
-        cur_ds = preprocess(cur_df)
-
-        result = generate_comp_report(
-            ref_ds,
-            cur_ds
-        )
-
-        save_report(
-            result,
-            save_path
-        )
-
-        print(
-            f"  [OK] Report [{phase_label}] da duoc luu."
-        )
-
-    except Exception as e:
-
-        print(
-            f"  [WARN] Khong the tao report: {e}"
-        )
-
-
-
 #===================================================================
 
 def proactive_retrain(reference_data: pd.DataFrame,
                       current_data: pd.DataFrame,
                       old_model) -> None:
-    if not _ask_user_retrain():
-        print("\n  [INFO] Nguoi dung chon khong retrain. Giu nguyen mo hinh hien tai.")
-        print(f"  [INFO] Hay theo doi drift va chay lai monitor.py khi can thiet.")
-        return
 
-    print(f"\n{SEP}")
+    print(SEP)
     print("  BAT DAU QUA TRINH RETRAIN")
     print(SEP)
 
-    # Bước 1: Before report — dùng current_data (inference logs)
-    print("\n  [PRE] Lưu report TRƯỚC khi retrain...")
-    _run_evaluation(reference_data, current_data, phase="before", model=old_model)
+    # Bước 1: Merge và ghi đè TRAIN_PATH
+    merged_data = merge_datasets_and_save(reference_data, current_data)
 
-    # Bước 2: Merge và ghi đè TRAIN_PATH
-    merge_datasets(reference_data, current_data)
-
-    # Bước 3: Backup model cũ
+    # Bước 2: Backup model cũ
     _backup_model()
 
-    # Bước 4: Train model mới
+    # Bước 3: Train model mới
     success = _run_train_script()
     if not success:
         print(f"\n  [THẤT BẠI] Quá trình chạy train.py gặp lỗi.")
@@ -491,10 +294,13 @@ def proactive_retrain(reference_data: pd.DataFrame,
         return
     print(f"\n  [OK] train.py chạy thành công. Model mới đã được lưu tại: {MODEL_PATH}")
 
-    # Bước 5: After report — vẫn dùng current_data để so sánh công bằng với before
-    # Mục tiêu: model mới có tốt hơn model cũ trên inference logs không?
+    # Bước 4: After report — vẫn dùng current_data để so sánh công bằng với before
     new_model = load_model(MODEL_PATH)
-    _run_evaluation(reference_data, current_data, phase="after", model=new_model)
+    merged_data[PRED_COL] = new_model.predict(merged_data[FEATURE_COLS])
+
+    new_report = generate_comp_report(current_data, merged_data)
+    save_report(new_report, REPORT_PATH)
+    webbrowser.open(f"file://{REPORT_PATH.absolute()}")
 
     print(f"\n{SEP}")
     print("  RETRAIN HOAN TAT THANH CONG")
@@ -516,7 +322,12 @@ def analyze_drift(result, reference_data: pd.DataFrame, current_data: pd.DataFra
     print(f"  Ngưỡng cảnh báo    : {drift_threshold:.0%}")
 
     if drift_share >= drift_threshold:
-        proactive_retrain(reference_data, current_data, model)
+        if not _ask_user_retrain():
+            print("\n  [INFO] Nguoi dung chon khong retrain. Giu nguyen mo hinh hien tai.")
+            print(f"  [INFO] Hay theo doi drift va chay lai monitor.py khi can thiet.")
+            return
+        else:
+            proactive_retrain(reference_data, current_data, model)
     else:
         print(f"\n  [OK] Hệ thống ổn định — Không cần thực hiện retrain.")
         print(f"{'─' * 60}")
@@ -552,14 +363,13 @@ def main() -> None:
 
     # 4. Tiền xử lý dữ liệu và mapping cấu trúc cho đối tượng Evidently Dataset
     print("\n[...] Tien xu ly du lieu cho doi tuong Evidently Dataset...")
-    ref_evidently = preprocess(reference_data)
-    cur_evidently = preprocess(current_data)
+ 
 
     # 5. Tính toán và kết xuất Data Drift so sánh tổng quan giữa Train và Logs
-    result = generate_comp_report(ref_evidently, cur_evidently)
+    result = generate_comp_report(reference_data, current_data)
     save_report(result, REPORT_PATH)
 
-    # 6. Phân tích kết quả drift, nếu vượt ngưỡng sẽ kích hoạt quy trình retrain
+    # 6. Phân tích kết quả drift, nếu vượt ngưỡng sẽ kích hoạt quy trình xem xet retrain
     analyze_drift(result, reference_data, current_data, model=model, drift_threshold=0.3)
 
     print(f"\n{SEP}")
