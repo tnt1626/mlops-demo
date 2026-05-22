@@ -296,9 +296,14 @@ def proactive_retrain(reference_data: pd.DataFrame,
 
     # Bước 4: After report — vẫn dùng current_data để so sánh công bằng với before
     new_model = load_model(MODEL_PATH)
-    merged_data[PRED_COL] = new_model.predict(merged_data[FEATURE_COLS])
+    # reference_data.drop(PRED_COL, inplace=True)
+    # current_data.drop(PRED_COL, inplace=True)
 
-    new_report = generate_comp_report(current_data, merged_data)
+    reference_data[PRED_COL] = new_model.predict(reference_data[FEATURE_COLS])
+    current_data[PRED_COL] = new_model.predict(current_data[FEATURE_COLS])
+    #merged_data[PRED_COL] = new_model.predict(merged_data[FEATURE_COLS])
+
+    new_report = generate_comp_report(reference_data, current_data)
     save_report(new_report, REPORT_PATH)
     webbrowser.open(f"file://{REPORT_PATH.absolute()}")
 
