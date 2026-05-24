@@ -1,35 +1,34 @@
 schema: '2.0'
 stages:
   train:
-    cmd: uv run python src/train.py
+    cmd: uv run python src/train.py --data-path data/train_data.csv --model-path
+      models/base_model.pkl
     deps:
     - path: data/train_data.csv
       hash: md5
-      md5: d71ed77c7b0401a60559a854dd788e5f
-      size: 72729
+      md5: b0ad71e8232f4781d9212ae148ad4198
+      size: 74730
     - path: src/train.py
       hash: md5
-      md5: d70844049b7814f08767e50f93227f2a
-      size: 1109
-      isexec: true
+      md5: eb78c03539f1621263b933a393c9bf17
+      size: 1675
     outs:
-    - path: models/model.pkl
+    - path: models/base_model.pkl
       hash: md5
-      md5: c93ad1e515bfc3424c6f211447272a8c
-      size: 700169
+      md5: e929d925d4156d6d2c8c30a704b13fe9
+      size: 699337
   generate_data:
     cmd: uv run python src/generate_train_data.py
     deps:
     - path: src/generate_train_data.py
       hash: md5
-      md5: f39d13ea07a3b1190fd50ced8d024679
-      size: 2675
-      isexec: true
+      md5: f904e96ca57766d5af383eb806aa3c8e
+      size: 2745
     outs:
     - path: data/train_data.csv
       hash: md5
-      md5: d71ed77c7b0401a60559a854dd788e5f
-      size: 72729
+      md5: b0ad71e8232f4781d9212ae148ad4198
+      size: 74730
   generate_drift:
     cmd: uv run python src/generate_drift_data.py
     deps:
@@ -59,3 +58,82 @@ stages:
       md5: 03b59e7dbac2c0d78a27429fd4d2738c
       size: 966
       isexec: true
+  monitor:
+    cmd: uv run python src/monitor.py run --reference-path data/train_data.csv 
+      --logs-path logs/inference_logs.csv --model-path models/base_model.pkl 
+      --report-path reports/drift_report.html --metrics-path 
+      reports/drift_metrics.json --decision-path reports/retrain_decision.json 
+      --drift-threshold 0.3
+    deps:
+    - path: data/train_data.csv
+      hash: md5
+      md5: b0ad71e8232f4781d9212ae148ad4198
+      size: 74730
+    - path: logs/inference_logs.csv
+      hash: md5
+      md5: 6737d96d0cc847c92790394ef37591d2
+      size: 37259
+    - path: models/base_model.pkl
+      hash: md5
+      md5: e929d925d4156d6d2c8c30a704b13fe9
+      size: 699337
+    - path: src/monitor.py
+      hash: md5
+      md5: 331e78a95682d6e17a332b7add02688c
+      size: 8486
+    outs:
+    - path: reports/drift_metrics.json
+      hash: md5
+      md5: d78a4397f9d5650df95e6c6b28399738
+      size: 132
+    - path: reports/drift_report.html
+      hash: md5
+      md5: 33dda34f45198abf8b73daea50fd23ac
+      size: 3998611
+    - path: reports/retrain_decision.json
+      hash: md5
+      md5: d78a4397f9d5650df95e6c6b28399738
+      size: 132
+  prepare_retrain_data:
+    cmd: uv run python src/monitor.py prepare-retrain-data --reference-path 
+      data/train_data.csv --logs-path logs/inference_logs.csv --decision-path 
+      reports/retrain_decision.json --output-path data/retrain_data.csv
+    deps:
+    - path: data/train_data.csv
+      hash: md5
+      md5: b0ad71e8232f4781d9212ae148ad4198
+      size: 74730
+    - path: logs/inference_logs.csv
+      hash: md5
+      md5: 6737d96d0cc847c92790394ef37591d2
+      size: 37259
+    - path: reports/retrain_decision.json
+      hash: md5
+      md5: d78a4397f9d5650df95e6c6b28399738
+      size: 132
+    - path: src/monitor.py
+      hash: md5
+      md5: 331e78a95682d6e17a332b7add02688c
+      size: 8486
+    outs:
+    - path: data/retrain_data.csv
+      hash: md5
+      md5: 8d009efb1c3854ec3fb71064699140a5
+      size: 111910
+  retrain:
+    cmd: uv run python src/train.py --data-path data/retrain_data.csv 
+      --model-path models/model.pkl
+    deps:
+    - path: data/retrain_data.csv
+      hash: md5
+      md5: 8d009efb1c3854ec3fb71064699140a5
+      size: 111910
+    - path: src/train.py
+      hash: md5
+      md5: eb78c03539f1621263b933a393c9bf17
+      size: 1675
+    outs:
+    - path: models/model.pkl
+      hash: md5
+      md5: 1b3a103a147f7f38444bfe8590e2740b
+      size: 2592937
