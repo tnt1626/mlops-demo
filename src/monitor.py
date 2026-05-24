@@ -165,17 +165,6 @@ def _extract_drift_share(result) -> float:
 # =============================================================================
 # MOT SO HAM TRUOC KHI RETRAIN
 # =============================================================================
-
-def _backup_model() -> None:
-    """Luu ban sao model cu truoc khi ghi de."""
-    if not MODEL_PATH.exists():
-        return
-    os.makedirs(MODEL_BACKUP_DIR, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = MODEL_BACKUP_DIR / f"model_backup_{ts}.pkl"
-    shutil.copy2(MODEL_PATH, backup_path)
-    print(f"  [OK] Da backup model cu tai: {backup_path}")
-
 def calc_tra_hang_thang(df: pd.DataFrame) -> pd.Series:
     so_tien_vay = df["so_tien_vay"]
     thoi_han_vay = (df["thoi_han_vay"].replace(0, pd.NA))
@@ -283,8 +272,6 @@ def proactive_retrain(reference_data: pd.DataFrame,
     # Bước 1: Merge và ghi đè TRAIN_PATH
     merged_data = merge_datasets_and_save(reference_data, current_data)
 
-    # Bước 2: Backup model cũ
-    _backup_model()
 
     # Bước 3: Train model mới
     success = _run_train_script()
