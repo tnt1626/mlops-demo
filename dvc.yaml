@@ -57,6 +57,7 @@ stages:
 
   simulate_drift:
     cmd: uv run python src/simulate_request.py
+    always_changed: true
     deps:
       - src/api.py
       - src/simulate_request.py

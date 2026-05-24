@@ -27,7 +27,7 @@ docker-run:
 # 	2 dòng code dưới để lưu vào csv local, nếu k sẽ lưu vào csv của Docker, khi reload sẽ mất
 
 simulate-drift:
-	dvc repro simulate_drift
+	dvc repro --force simulate_drift
 	
 update-logs:
 	gcloud storage cp gs://mlops-demo-hcmus-bucket/inference_logs.csv logs/inference_logs.csv
