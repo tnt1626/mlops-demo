@@ -13,8 +13,11 @@ from fastapi import Request
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# Load model
-model = joblib.load("models/model.pkl")
+# Load production model; fallback to baseline model for first-time demo bootstrap.
+MODEL_PATH = Path("models/model.pkl")
+if not MODEL_PATH.exists():
+    MODEL_PATH = Path("models/base_model.pkl")
+model = joblib.load(MODEL_PATH)
 
 # 3. Định nghĩa dữ liệu đầu vào
 class PredictRequest(BaseModel):

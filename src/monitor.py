@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -28,6 +29,9 @@ FEATURE_COLS = [
 ]
 TARGET_COL = "lich_su_no_xau"
 PRED_COL = "prediction"
+API_LOG_COLS = ["timestamp"] + FEATURE_COLS + [TARGET_COL, PRED_COL]
+DRIFT_DATA_COLS = FEATURE_COLS + [TARGET_COL]
+DRIFT_DATA_WITH_PRED_COLS = FEATURE_COLS + [TARGET_COL, PRED_COL]
 
 
 def load_data(path: Path, *, required: bool = True) -> pd.DataFrame:
@@ -36,6 +40,59 @@ def load_data(path: Path, *, required: bool = True) -> pd.DataFrame:
             raise FileNotFoundError(f"Khong tim thay file: {path}")
         return pd.DataFrame()
     return pd.read_csv(path)
+
+
+def load_inference_logs(path: Path) -> pd.DataFrame:
+    if not path.exists() or path.stat().st_size == 0:
+        raise ValueError(
+            f"{path} dang rong hoac chua ton tai. Hay chay API bang `make serve`, "
+            "roi chay `make simulate-drift` truoc khi monitor/retrain."
+        )
+
+    try:
+        return pd.read_csv(path)
+    except pd.errors.EmptyDataError as exc:
+        raise ValueError(
+            f"{path} khong co dong du lieu nao. Hay chay API bang `make serve`, "
+            "roi chay `make simulate-drift` truoc khi monitor/retrain."
+        ) from exc
+    except pd.errors.ParserError:
+        pass
+
+    rows = []
+    with path.open(newline="", encoding="utf-8") as file:
+        reader = csv.reader(file)
+        header = next(reader, None)
+        if header is None:
+            raise ValueError(
+                f"{path} khong co header. Hay chay API bang `make serve`, "
+                "roi chay `make simulate-drift` truoc khi monitor/retrain."
+            )
+
+        for row in reader:
+            if not row or row == header:
+                continue
+            if len(row) == len(DRIFT_DATA_COLS):
+                rows.append(dict(zip(DRIFT_DATA_COLS, row)))
+            elif len(row) == len(DRIFT_DATA_WITH_PRED_COLS):
+                rows.append(dict(zip(DRIFT_DATA_WITH_PRED_COLS, row)))
+            elif len(row) == len(API_LOG_COLS):
+                rows.append(dict(zip(API_LOG_COLS, row)))
+            else:
+                raise ValueError(
+                    f"Dong log khong dung schema: expected 6, 7, or 8 fields; got {len(row)} fields."
+                )
+
+    data = pd.DataFrame(rows)
+    if data.empty:
+        raise ValueError(
+            f"{path} khong co log hop le. Hay chay API bang `make serve`, "
+            "roi chay `make simulate-drift` truoc khi monitor/retrain."
+        )
+    for col in DRIFT_DATA_WITH_PRED_COLS:
+        if col in data.columns:
+            data[col] = pd.to_numeric(data[col], errors="coerce")
+    return data
 
 
 def load_model(path: Path):
@@ -144,7 +201,7 @@ def run_monitor(args: argparse.Namespace) -> None:
 
     model = load_model(model_path)
     reference_data = normalize_data(load_data(reference_path), model=model)
-    current_data = normalize_data(load_data(logs_path), model=model)
+    current_data = normalize_data(load_inference_logs(logs_path), model=model)
 
     result = generate_report(reference_data, current_data)
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,7 +238,7 @@ def prepare_retrain_data(args: argparse.Namespace) -> None:
     reference_data = reference_data[FEATURE_COLS + [TARGET_COL]]
 
     if should_retrain:
-        logs_data = normalize_data(load_data(logs_path), require_prediction=False)
+        logs_data = normalize_data(load_inference_logs(logs_path), require_prediction=False)
         logs_data = logs_data[FEATURE_COLS + [TARGET_COL]]
         retrain_data = pd.concat([reference_data, logs_data], ignore_index=True)
         print(f"[INFO] Drift vuot nguong, merge train + logs: {len(retrain_data)} rows.")
