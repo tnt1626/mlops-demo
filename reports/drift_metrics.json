@@ -1,0 +1,7 @@
+{
+  "drift_share": 1.0,
+  "drift_threshold": 0.3,
+  "should_retrain": true,
+  "reference_rows": 2000,
+  "current_rows": 1000
+}
