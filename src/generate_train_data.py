@@ -56,7 +56,7 @@ def generate_advanced_credit_data(n_samples=2000, random_state=42):
 def main():
     os.makedirs('data', exist_ok=True)
     # Lấy toàn bộ data từ generator
-    df = generate_advanced_credit_data(n_samples=2000)
+    df = generate_advanced_credit_data(n_samples=1000)
 
     cols_to_save = ['thu_nhap', 'so_tien_vay', 'thoi_han_vay', 'diem_tin_dung', 'tra_hang_thang', 'lich_su_no_xau']
     df[cols_to_save].to_csv('data/train_data.csv', index=False)

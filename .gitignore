@@ -228,3 +228,4 @@ __marimo__/
 !/logs/.gitkeep
 /reports/*
 !/reports/.gitkeep
+notes.md
