@@ -5,18 +5,17 @@ stages:
     deps:
     - path: data/train_data.csv
       hash: md5
-      md5: d71ed77c7b0401a60559a854dd788e5f
-      size: 72729
+      md5: 042755a20990c25174fa7bf5b06fb32d
+      size: 181678
     - path: src/train.py
       hash: md5
       md5: d70844049b7814f08767e50f93227f2a
       size: 1109
-      isexec: true
     outs:
     - path: models/model.pkl
       hash: md5
-      md5: c93ad1e515bfc3424c6f211447272a8c
-      size: 700169
+      md5: 65aed077b7ed45865f94fe1d8ecbe26f
+      size: 1170249
   generate_data:
     cmd: uv run python src/generate_train_data.py
     deps:
