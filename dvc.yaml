@@ -1,22 +1,53 @@
 stages:
-  #Tạo train_data.csv
   generate_data:
     cmd: uv run python src/generate_train_data.py
     deps:
       - src/generate_train_data.py
     outs:
-      - data/train_data.csv #dvc lưu và xóa train_data.csv trên workspace nếu đã có sẵn 
-                            # Nếu code generate_train_data.py và csv không đổi thì tự skip
+      - data/train_data.csv
 
   train:
-    cmd: uv run python src/train.py
+    cmd: uv run python src/train.py --data-path data/train_data.csv --model-path models/base_model.pkl
     deps:
       - src/train.py
       - data/train_data.csv
     outs:
-      - models/model.pkl 
+      - models/base_model.pkl
 
-      # --- CẤU HÌNH MỚI CHO DRIFT SIMULATION ---
+  monitor:
+    cmd: uv run python src/monitor.py run --reference-path data/train_data.csv --logs-path logs/inference_logs.csv --model-path models/base_model.pkl --report-path reports/drift_report.html --metrics-path reports/drift_metrics.json --decision-path reports/retrain_decision.json --drift-threshold 0.3
+    deps:
+      - src/monitor.py
+      - data/train_data.csv
+      - logs/inference_logs.csv
+      - models/base_model.pkl
+    outs:
+      - reports/drift_report.html:
+          cache: false
+      - reports/retrain_decision.json:
+          cache: false
+    metrics:
+      - reports/drift_metrics.json:
+          cache: false
+
+  prepare_retrain_data:
+    cmd: uv run python src/monitor.py prepare-retrain-data --reference-path data/train_data.csv --logs-path logs/inference_logs.csv --decision-path reports/retrain_decision.json --output-path data/retrain_data.csv
+    deps:
+      - src/monitor.py
+      - data/train_data.csv
+      - logs/inference_logs.csv
+      - reports/retrain_decision.json
+    outs:
+      - data/retrain_data.csv
+
+  retrain:
+    cmd: uv run python src/train.py --data-path data/retrain_data.csv --model-path models/model.pkl
+    deps:
+      - src/train.py
+      - data/retrain_data.csv
+    outs:
+      - models/model.pkl
+
   generate_drift:
     cmd: uv run python src/generate_drift_data.py
     deps:
@@ -26,9 +57,8 @@ stages:
 
   simulate_drift:
     cmd: uv run python src/simulate_request.py
+    always_changed: true
     deps:
       - src/api.py
       - src/simulate_request.py
-      - data/drift_data.csv #Khi gọi dvc thấy thiếu file drift_data.csv sẽ tự 
-                            #quét các đầu ra "outs" ở các stage và tự chạy stage generate_drift
-    # Không lưu logs lại nữa vì ggcloud đã quản lí và cập nhật liên tục
+      - data/drift_data.csv

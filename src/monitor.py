@@ -1,49 +1,51 @@
 """
 Mô-đun Giám sát & Phát hiện Drift (Monitoring & Drift Detection)
-=================================================================
-Mục đích: Phát hiện data drift bằng cách so sánh dữ liệu huấn luyện gốc
-với dữ liệu logs API (dự đoán thực tế) bằng thư viện Evidently AI.
-
-Luồng hoạt động:
-  1. Đọc dữ liệu huấn luyện gốc (reference) từ data/train_data.csv
-  2. Đọc dữ liệu logs từ API (current) từ logs/inference_logs.csv
-  3. Load mô hình từ models/model.pkl
-  4. Tính toán dự đoán bằng mô hình
-  5. Chạy Evidently DataDriftPreset & ClassificationPreset
-  6. Tạo báo cáo HTML chi tiết
-  7. Nếu drift vượt ngưỡng: hỏi người dùng có muốn retrain không
-  8. Nếu có: merge dữ liệu, backup mô hình cũ, retrain mô hình mới
-
-Dependencies: pandas, numpy, joblib, evidently, subprocess, webbrowser
-
-Chạy: python src/monitor.py
-      (Yêu cầu: data/train_data.csv, logs/inference_logs.csv, models/model.pkl)
 """
-
-import os
-import sys
-import json
-import subprocess
-import shutil
-import webbrowser
-from pathlib import Path
-from datetime import datetime
-from typing import Optional
-
-import numpy as np
-import pandas as pd
 import joblib
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    confusion_matrix,
-)
-
+import pandas as pd
 from evidently import Dataset, DataDefinition, Report
-from evidently.presets import DataDriftPreset, ClassificationPreset
 from evidently.core.datasets import BinaryClassification
+from evidently.presets import ClassificationPreset, DataDriftPreset
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+DEFAULT_REFERENCE_PATH = BASE_DIR / "data" / "train_data.csv"
+DEFAULT_LOGS_PATH = BASE_DIR / "logs" / "inference_logs.csv"
+DEFAULT_BASE_MODEL_PATH = BASE_DIR / "models" / "base_model.pkl"
+DEFAULT_REPORT_PATH = BASE_DIR / "reports" / "drift_report.html"
+DEFAULT_METRICS_PATH = BASE_DIR / "reports" / "drift_metrics.json"
+DEFAULT_DECISION_PATH = BASE_DIR / "reports" / "retrain_decision.json"
+DEFAULT_RETRAIN_DATA_PATH = BASE_DIR / "data" / "retrain_data.csv"
+
+FEATURE_COLS = [
+    "thu_nhap",
+    "so_tien_vay",
+    "thoi_han_vay",
+    "diem_tin_dung",
+    "tra_hang_thang",
+]
+TARGET_COL = "lich_su_no_xau"
+PRED_COL = "prediction"
+API_LOG_COLS = ["timestamp"] + FEATURE_COLS + [TARGET_COL, PRED_COL]
+DRIFT_DATA_COLS = FEATURE_COLS + [TARGET_COL]
+DRIFT_DATA_WITH_PRED_COLS = FEATURE_COLS + [TARGET_COL, PRED_COL]
+
+
+def load_data(path: Path, *, required: bool = True) -> pd.DataFrame:
+    if not path.exists():
+        if required:
+            raise FileNotFoundError(f"Khong tim thay file: {path}")
+        return pd.DataFrame()
+    return pd.read_csv(path)
+
+
+def load_inference_logs(path: Path) -> pd.DataFrame:
+    if not path.exists() or path.stat().st_size == 0:
+        raise ValueError(
+            f"{path} dang rong hoac chua ton tai. Hay chay API bang `make serve`, "
+            "roi chay `make simulate-drift` truoc khi monitor/retrain."
+        )
 
 
 # ============================================================================
@@ -200,8 +202,6 @@ def preprocess_for_evidently(data: pd.DataFrame) -> Dataset:
                 target=TARGET_COL,
                 prediction_labels=PRED_COL,
             )
-        ]
-    )
 
     # Chuyển sang Evidently Dataset
     evid_dataset = Dataset.from_pandas(
@@ -211,6 +211,10 @@ def preprocess_for_evidently(data: pd.DataFrame) -> Dataset:
 
     return evid_dataset
 
+def load_model(path: Path):
+    if not path.exists():
+        raise FileNotFoundError(f"Khong tim thay model: {path}")
+    return joblib.load(path)
 
 # ============================================================================
 # SECTION 3: TẠO & LƯU BÁOÁO CÁO
@@ -423,7 +427,6 @@ def merge_datasets_and_save(
     """
     print("\n  [1/4] Gộp dữ liệu train + logs mới...")
 
-    required_cols = FEATURE_COLS + [TARGET_COL]
 
     # Copy để không sửa dữ liệu gốc
     ref_work = reference_data.copy()
@@ -435,10 +438,66 @@ def merge_datasets_and_save(
     if "tra_hang_thang" not in log_work.columns:
         log_work["tra_hang_thang"] = calculate_monthly_payment(log_work)
 
-    ref_df = ref_work[required_cols].dropna().copy()
-    log_df = log_work[required_cols].dropna().copy()
 
-    merged_df = pd.concat([ref_df, log_df], ignore_index=True)
+def save_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def run_monitor(args: argparse.Namespace) -> None:
+    reference_path = Path(args.reference_path)
+    logs_path = Path(args.logs_path)
+    model_path = Path(args.model_path)
+    report_path = Path(args.report_path)
+    metrics_path = Path(args.metrics_path)
+    decision_path = Path(args.decision_path)
+
+    model = load_model(model_path)
+    reference_data = normalize_data(load_data(reference_path), model=model)
+    current_data = normalize_data(load_inference_logs(logs_path), model=model)
+
+    result = generate_report(reference_data, current_data)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    result.save_html(str(report_path))
+
+    drift_share = extract_drift_share(result)
+    should_retrain = drift_share >= args.drift_threshold
+    payload = {
+        "drift_share": drift_share,
+        "drift_threshold": args.drift_threshold,
+        "should_retrain": should_retrain,
+        "reference_rows": int(len(reference_data)),
+        "current_rows": int(len(current_data)),
+    }
+    save_json(metrics_path, payload)
+    save_json(decision_path, payload)
+
+    print(f"[OK] Drift report: {report_path}")
+    print(f"[OK] Drift metrics: {metrics_path}")
+    print(f"[OK] Retrain decision: {decision_path}")
+    print(f"[INFO] Drift share: {drift_share:.2%}; should_retrain={should_retrain}")
+
+
+def prepare_retrain_data(args: argparse.Namespace) -> None:
+    reference_path = Path(args.reference_path)
+    logs_path = Path(args.logs_path)
+    decision_path = Path(args.decision_path)
+    output_path = Path(args.output_path)
+
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    should_retrain = bool(decision.get("should_retrain", False))
+
+    reference_data = normalize_data(load_data(reference_path), require_prediction=False)
+    reference_data = reference_data[FEATURE_COLS + [TARGET_COL]]
+
+    if should_retrain:
+        logs_data = normalize_data(load_inference_logs(logs_path), require_prediction=False)
+        logs_data = logs_data[FEATURE_COLS + [TARGET_COL]]
+        retrain_data = pd.concat([reference_data, logs_data], ignore_index=True)
+        print(f"[INFO] Drift vuot nguong, merge train + logs: {len(retrain_data)} rows.")
+    else:
+        retrain_data = reference_data
+        print("[INFO] Drift chua vuot nguong, dung lai train data hien tai.")
 
     # Ghi đè file train_data.csv
     os.makedirs(TRAIN_PATH.parent, exist_ok=True)
@@ -449,7 +508,9 @@ def merge_datasets_and_save(
     print(f"       - Logs:      {len(log_df):,} hàng")
     print(f"       - Tổng:      {len(merged_df):,} hàng → Ghi vào {TRAIN_PATH}")
 
-    return merged_df
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Monitor drift and prepare DVC retrain inputs.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
 
 def run_train_script() -> bool:

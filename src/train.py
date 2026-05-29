@@ -1,53 +1,6 @@
 """
 Mô-đun Huấn luyện Mô hình (Training Module)
-================================================
-Mục đích: Huấn luyện một mô hình Máy học để phân loại nợ xấu dựa trên các đặc trưng tài chính.
-
-Luồng hoạt động:
-  1. Đọc dữ liệu huấn luyện từ data/train_data.csv
-  2. Tách dữ liệu thành 80% huấn luyện và 20% kiểm tra
-  3. Huấn luyện mô hình RandomForest với cân bằng lớp (balanced)
-  4. Lưu mô hình vào models/model.pkl
-
-Dependencies: pandas, scikit-learn, joblib
-
-Tác giả: MLOps Team - HCMUS Intro2DS Project
 """
-
-import os
-from pathlib import Path
-import pandas as pd
-import joblib
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report
-
-
-# ============================================================================
-# CẤU HÌNH
-# ============================================================================
-
-FEATURE_COLUMNS = [
-    "thu_nhap",           # Thu nhập (VND/tháng)
-    "so_tien_vay",        # Số tiền vay (VND)
-    "thoi_han_vay",       # Thời hạn vay (tháng)
-    "diem_tin_dung",      # Điểm tín dụng (300-850)
-    "tra_hang_thang"      # Tiền trả hàng tháng (VND)
-]
-
-TARGET_COLUMN = "lich_su_no_xau"  # Lịch sử nợ xấu (0: tốt, 1: nợ xấu)
-
-DATA_PATH = Path("data") / "train_data.csv"
-MODEL_OUTPUT_PATH = Path("models") / "model.pkl"
-
-TRAIN_TEST_SPLIT_RATIO = 0.2
-RANDOM_STATE = 42
-
-
-# ============================================================================
-# HÀM HUẤN LUYỆN
-# ============================================================================
-
 def train_model(data: pd.DataFrame) -> None:
     """
     Huấn luyện mô hình RandomForest để phân loại nợ xấu.
