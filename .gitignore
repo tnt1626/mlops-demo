@@ -229,6 +229,5 @@ __marimo__/
 !/logs/.gitkeep
 /reports/*
 !/reports/.gitkeep
-!/reports/drift_metrics.json
-!/reports/retrain_decision.json
 notes.md
+RE*.md
