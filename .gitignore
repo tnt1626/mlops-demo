@@ -229,3 +229,4 @@ __marimo__/
 /reports/*
 !/reports/.gitkeep
 notes.md
+RE*.md
